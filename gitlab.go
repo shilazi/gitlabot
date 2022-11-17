@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -186,7 +187,7 @@ type IssueObject struct {
 
 type Commit struct {
 	Id        string `json:"id"`
-	Message   string `json:"message"`
+	Title     string `json:"title"`
 	TimeStamp string `json:"timestamp"`
 	Url       string `json:"url"`
 	Author    Author `json:"author"`
@@ -218,11 +219,8 @@ func bindJson(ctx *gin.Context, m interface{}) error {
 	return nil
 }
 
-func buildMsg(content string, markdown bool) string {
-	if markdown {
-		return fmt.Sprintf(`{"msgtype": "markdown", "markdown":{"content": "%s"}}`, content)
-	}
-	return fmt.Sprintf(`{"msgtype": "text", "text":{"content": "%s"}}`, content)
+func buildMsg(content string, msgType string) string {
+	return fmt.Sprintf(`{"msgtype": "%s", "%s":{"content": "%s"}}`, msgType, msgType, content)
 }
 
 func TransmitRobot(ctx *gin.Context) {
@@ -248,7 +246,7 @@ func TransmitRobot(ctx *gin.Context) {
 		content = "# " + pushBody.Repository.Name + "\n"
 		content += "### On branch `" + pushBody.Ref + "`\n"
 		for _, v := range pushBody.Commits {
-			content += fmt.Sprintf("%s push a commit [%s](%s)  %s", v.Author.Name, strings.ReplaceAll(v.Message, "\n", ""), v.Url, v.TimeStamp) + "\n"
+			content += fmt.Sprintf("%s push a commit [%s](%s) %s", v.Author.Name, v.Title, v.Url, v.TimeStamp) + "\n"
 		}
 		if pushBody.After == "0000000000000000000000000000000000000000" {
 			content += fmt.Sprintf("%s `remove` it", pushBody.UserName)
@@ -320,7 +318,15 @@ func TransmitRobot(ctx *gin.Context) {
 		return
 	}
 	content = trans2Emoji(content)
-	data := []byte(buildMsg(content, true))
+	msgType := os.Getenv("MSG_TYPE")
+	if len(msgType) == 0 {
+		msgType = "text"
+	} else {
+		if msgType != "text" && msgType != "markdown" {
+			panic("OS env MSG_TYPE must be markdown or text or unset")
+		}
+	}
+	data := []byte(buildMsg(content, msgType))
 	client := NewClient()
 	resp, wxErr = client.Post(requestUrl, "application/json", bytes.NewBuffer(data))
 	defer resp.Body.Close()
